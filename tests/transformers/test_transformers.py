@@ -325,6 +325,14 @@ class TestCache(object):
         assert_equal(len(data[-1][0]), 100 % 7)
         assert not cached_stream.cache[0]
 
+        stream = Batch(DataStream(IterableDataset(range(3000))),
+                       ConstantScheme(3200))
+
+        cached_stream = Cache(stream, ConstantScheme(64))
+        data = list(cached_stream.get_epoch_iterator())
+        assert_equal(len(data[-1][0]), 3000 % 64)
+        assert not cached_stream.cache[0]
+
     def test_epoch_transition(self):
         cached_stream = Cache(self.stream, ConstantScheme(7, times=3))
         for _, epoch in zip(range(2), cached_stream.iterate_epochs()):
@@ -649,6 +657,37 @@ class TestRename(object):
 
     def test_raises_error_on_nonexistent_source_name(self):
         assert_raises(KeyError, Rename, self.stream, {'Z': 'features'})
+
+    def test_raises_on_invalid_kwargs(self):
+        assert_raises(ValueError, Rename, self.stream,
+                      {'X': 'features'}, on_non_existent='foo')
+
+    def test_name_clash(self):
+        assert_raises(KeyError, Rename, self.stream, {'X': 'y'})
+
+    def test_name_swap(self):
+        assert_equal(Rename(self.stream,
+                            {'X': 'y', 'y': 'X'},
+                            on_non_existent='ignore').sources,
+                     ('y', 'X'))
+
+    def test_raises_on_not_one_to_one(self):
+        assert_raises(KeyError, Rename, self.stream, {'X': 'features',
+                                                      'y': 'features'})
+
+    def test_intentionally_ignore_missing(self):
+        assert_equal(Rename(self.stream,
+                            {'X': 'features', 'y': 'targets',
+                             'Z': 'fudgesicle'},
+                            on_non_existent='ignore').sources,
+                     ('features', 'targets'))
+
+    def test_not_one_to_one_ok_if_not_a_source_in_data_stream(self):
+        assert_equal(Rename(self.stream,
+                            {'X': 'features', 'y': 'targets',
+                             'Z': 'targets'},
+                            on_non_existent='ignore').sources,
+                     ('features', 'targets'))
 
     def test_renames_axis_labels(self):
         assert_equal(self.transformer.axis_labels,
